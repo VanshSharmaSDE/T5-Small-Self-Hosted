@@ -1,4 +1,6 @@
-# Title → Description API (t5-small)
+# Text Generation API
+
+A simple FastAPI service that generates text using Hugging Face language models.
 
 ## Local setup
 ```bash
@@ -10,8 +12,14 @@ uvicorn app.main:app --reload --port 8000
 
 ## Test
 ```bash
-curl -X POST "http://127.0.0.1:8000/generate" -H "Content-Type: application/json" -d '{"title":"Smart Water Bottle"}'
+curl -X POST "http://127.0.0.1:8000/generate" -H "Content-Type: application/json" -d '{"prompt":"The weather today is", "max_length": 30}'
 ```
+
+Example prompts:
+- `"Once upon a time"`
+- `"The benefits of exercise are"`
+- `"In the future, technology will"`
+- `"My favorite recipe is"`
 
 ## Deploy on Render
 - Push repo with Dockerfile

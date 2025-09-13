@@ -29,13 +29,14 @@ except Exception as e:
     model_error = str(e)
     print(f"Error loading model '{MODEL_ID}': {model_error}")
 
-app = FastAPI(title="Tiny GPT-2 API")
+app = FastAPI(title="Text Generation API")
 
-class TitleIn(BaseModel):
-    title: str
+class TextInput(BaseModel):
+    prompt: str
+    max_length: int = 50
 
 @app.post("/generate")
-def generate_description(data: TitleIn):
+def generate_text(data: TextInput):
     # Check if model is loaded
     if not model_loaded:
         raise HTTPException(
@@ -43,8 +44,8 @@ def generate_description(data: TitleIn):
             detail=f"Model not available: {model_error}"
         )
     
-    # Create a prompt for description generation
-    prompt = f"Title: {data.title}\nDescription:"
+    # Use the prompt directly without modification
+    prompt = data.prompt.strip()
     
     # Encode with attention mask
     inputs = tokenizer.encode(prompt, return_tensors="pt")
@@ -53,24 +54,28 @@ def generate_description(data: TitleIn):
     outputs = model.generate(
         inputs,
         attention_mask=attention_mask,
-        max_length=100,  # Increased for better descriptions
+        max_length=min(inputs.shape[1] + data.max_length, 100),  # Limit total length
         do_sample=True,
-        temperature=0.7,
+        temperature=0.8,  # More creative
         top_p=0.9,
-        pad_token_id=tokenizer.pad_token_id
+        top_k=50,  # Add top-k sampling for better quality
+        pad_token_id=tokenizer.pad_token_id,
+        repetition_penalty=1.1,  # Reduce repetition
+        early_stopping=True  # Stop when EOS token is generated
     )
 
     generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
     
-    # Extract just the description part (after "Description:")
-    if "Description:" in generated_text:
-        description = generated_text.split("Description:")[-1].strip()
+    # Remove the original prompt from the output
+    if prompt in generated_text:
+        completion = generated_text[len(prompt):].strip()
     else:
-        description = generated_text.replace(prompt, "").strip()
+        completion = generated_text.strip()
     
     return {
-        "title": data.title,
-        "description": description
+        "prompt": data.prompt,
+        "completion": completion,
+        "full_text": generated_text
     }
 
 @app.get("/")
@@ -80,7 +85,7 @@ def root():
             "status": "healthy",
             "model_loaded": True,
             "model_id": MODEL_ID,
-            "message": "Language model is ready to generate descriptions"
+            "message": "Language model is ready to generate text"
         }
     else:
         return {
