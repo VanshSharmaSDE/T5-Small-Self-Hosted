@@ -4,7 +4,7 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 
 # Local model path (placed at project root: ./tiny-gpt2)
-MODEL_PATH = "./tiny-gpt2"
+MODEL_PATH = "tiny-gpt2"
 
 # Model loading status
 model_loaded = False
