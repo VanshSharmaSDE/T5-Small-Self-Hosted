@@ -1,56 +1,117 @@
-from flask import Flask, request, jsonify
-from transformers import T5ForConditionalGeneration, T5Tokenizer
-import torch
+# app/main.py
+import os
 import threading
 import time
+import logging
 import requests
-import os
 
-app = Flask(__name__)
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
-# Load model + tokenizer once
-MODEL_NAME = "t5-small"
-tokenizer = T5Tokenizer.from_pretrained(MODEL_NAME)
-model = T5ForConditionalGeneration.from_pretrained(MODEL_NAME)
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, logging as hf_logging
+import torch
 
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({"status": "ok", "message": "T5 Small Description Generator is running!"})
+# ---- Reduce transformers logging noise (suppresses the legacy-info line) ----
+hf_logging.set_verbosity_error()
 
-@app.route("/generate", methods=["POST"])
-def generate_description():
-    data = request.get_json()
-    title = data.get("title", "")
+# ---- Config ----
+MODEL_NAME = os.getenv("MODEL_NAME", "t5-small")
+PRELOAD_MODEL = os.getenv("PRELOAD_MODEL", "1")  # "1" loads model in background at startup
+KEEP_ALIVE_URL = os.getenv("RENDER_URL")        # e.g. https://t5-small-self-hosted.onrender.com
+KEEP_ALIVE_INTERVAL = int(os.getenv("KEEP_ALIVE_INTERVAL", "600"))  # seconds
 
-    if not title:
-        return jsonify({"error": "Title is required"}), 400
+app = FastAPI(title="T5 Title→Description")
 
-    input_text = f"generate description: {title}"
-    inputs = tokenizer.encode(input_text, return_tensors="pt", max_length=64, truncation=True)
-    outputs = model.generate(inputs, max_length=100, num_beams=4, early_stopping=True)
-    description = tokenizer.decode(outputs[0], skip_special_tokens=True)
+# ---- Model globals ----
+tokenizer = None
+model = None
+_model_lock = threading.Lock()
+_model_ready = False
 
-    return jsonify({"title": title, "description": description})
+def load_model():
+    """Load tokenizer + model. Safe to call multiple times (uses lock)."""
+    global tokenizer, model, _model_ready
+    with _model_lock:
+        if _model_ready:
+            return
+        logging.info("Loading model %s ...", MODEL_NAME)
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+        model = AutoModelForSeq2SeqLM.from_pretrained(MODEL_NAME)
+        model.eval()
+        # move to GPU if available (optional)
+        if torch.cuda.is_available():
+            model.to("cuda")
+        _model_ready = True
+        logging.info("Model loaded.")
 
-@app.get("/health", summary="Health check")
+def _background_model_loader():
+    try:
+        load_model()
+    except Exception:
+        logging.exception("Background model load failed")
+
+# Start background model load if configured (non-blocking)
+if PRELOAD_MODEL != "0":
+    t = threading.Thread(target=_background_model_loader, daemon=True)
+    t.start()
+
+# ---- API types ----
+class GenerateRequest(BaseModel):
+    title: str
+    max_length: int = 60
+    num_beams: int = 1
+
+# Lightweight health endpoint used by Render and keep-alive
+@app.get("/health")
 def health():
-    return {"status": "ok"}
+    status = "ready" if _model_ready else "loading"
+    return {"status": status}
 
-# --- 🔥 Keep Alive Function ---
-def keep_alive():
-    url = os.environ.get("RENDER_URL", "https://t5-small-tickr.onrender.com")
+# Main generation endpoint
+@app.post("/generate")
+def generate(req: GenerateRequest):
+    global _model_ready
+    title = (req.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title must be non-empty.")
+
+    # If model not ready, wait up to WAIT_SECONDS then fail with 503
+    if not _model_ready:
+        WAIT_SECONDS = 30
+        waited = 0
+        while waited < WAIT_SECONDS and not _model_ready:
+            time.sleep(1)
+            waited += 1
+        if not _model_ready:
+            raise HTTPException(status_code=503, detail="Model is loading; try again shortly.")
+
+    prompt = f"generate description: {title}"
+    inputs = tokenizer(prompt, return_tensors="pt", truncation=True, padding=True)
+    if torch.cuda.is_available():
+        inputs = {k: v.to("cuda") for k, v in inputs.items()}
+
+    with torch.no_grad():
+        out = model.generate(
+            **inputs,
+            max_length=req.max_length,
+            num_beams=req.num_beams,
+            early_stopping=True,
+        )
+    desc = tokenizer.decode(out[0], skip_special_tokens=True)
+    return {"title": title, "description": desc}
+
+# ---- Optional keep-alive ping (self-ping) ----
+def _keep_alive_worker():
+    if not KEEP_ALIVE_URL:
+        return
+    url = KEEP_ALIVE_URL.rstrip("/") + "/health"
     while True:
         try:
             requests.get(url, timeout=10)
-            print(f"Pinged {url} to keep alive.")
         except Exception as e:
-            print(f"Keep-alive failed: {e}")
-        time.sleep(600)  # every 10 minutes
+            logging.debug("Keep-alive ping failed: %s", e)
+        time.sleep(KEEP_ALIVE_INTERVAL)
 
-
-# Start keep-alive thread when app starts
-threading.Thread(target=keep_alive, daemon=True).start()
-
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+if KEEP_ALIVE_URL:
+    t2 = threading.Thread(target=_keep_alive_worker, daemon=True)
+    t2.start()
