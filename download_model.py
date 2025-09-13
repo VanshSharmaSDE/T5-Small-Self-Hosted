@@ -1,7 +1,7 @@
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import os
 
-MODEL_NAME = "t5-small"
+MODEL_NAME = "distilgpt2"
 TARGET_DIR = os.path.join("models", MODEL_NAME)
 
 os.makedirs(TARGET_DIR, exist_ok=True)
