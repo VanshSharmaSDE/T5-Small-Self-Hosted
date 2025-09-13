@@ -1,14 +1,7 @@
 services:
   - type: web
-    name: title-description-api
-    env: docker
-    plan: free                # or starter/standard depending on your needs
-    autoDeploy: true
-    region: oregon            # or frankfurt, singapore, etc.
-    previews:
-      enabled: true
-    envVars:
-      - key: PORT
-        value: 8000
-      - key: FORCE_CPU
-        value: "1"
+    name: t5-description-generator
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn main:app --bind 0.0.0.0:$PORT"
