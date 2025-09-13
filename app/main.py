@@ -2,9 +2,11 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
+import os
 
-# Local model path (placed at project root: ./tiny-gpt2)
-MODEL_PATH = "tiny-gpt2"
+# Hugging Face model id (configurable via env var MODEL_ID)
+# Default uses a tiny GPT-2 for fast startup
+MODEL_ID = os.getenv("MODEL_ID", "sshleifer/tiny-gpt2")
 
 # Model loading status
 model_loaded = False
@@ -12,15 +14,15 @@ model_error = None
 tokenizer = None
 model = None
 
-# Load tokenizer & model from local directory with error handling
+# Load tokenizer & model from Hugging Face with error handling
 try:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
-    model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, local_files_only=True)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_ID)
     model_loaded = True
-    print("Model and tokenizer loaded successfully!")
+    print(f"Model and tokenizer loaded successfully from '{MODEL_ID}'!")
 except Exception as e:
     model_error = str(e)
-    print(f"Error loading model: {model_error}")
+    print(f"Error loading model '{MODEL_ID}': {model_error}")
 
 app = FastAPI(title="Tiny GPT-2 API")
 
@@ -69,12 +71,14 @@ def root():
         return {
             "status": "healthy",
             "model_loaded": True,
-            "message": "Tiny GPT-2 model is ready to generate descriptions"
+            "model_id": MODEL_ID,
+            "message": "Language model is ready to generate descriptions"
         }
     else:
         return {
             "status": "unhealthy",
             "model_loaded": False,
+            "model_id": MODEL_ID,
             "error": model_error,
             "message": "Model failed to load"
         }
