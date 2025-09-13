@@ -3,8 +3,4 @@ uvicorn
 gunicorn
 transformers
 torch
-sentencepiece
 requests
-bitsandbytes>=0.37.0
-accelerate>=0.20.0
-psutil
