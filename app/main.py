@@ -18,6 +18,11 @@ model = None
 try:
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
     model = AutoModelForCausalLM.from_pretrained(MODEL_ID)
+    
+    # Fix pad token issue - set pad token if not already set
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    
     model_loaded = True
     print(f"Model and tokenizer loaded successfully from '{MODEL_ID}'!")
 except Exception as e:
@@ -41,15 +46,18 @@ def generate_description(data: TitleIn):
     # Create a prompt for description generation
     prompt = f"Title: {data.title}\nDescription:"
     
+    # Encode with attention mask
     inputs = tokenizer.encode(prompt, return_tensors="pt")
+    attention_mask = torch.ones(inputs.shape, dtype=torch.long)
 
     outputs = model.generate(
         inputs,
+        attention_mask=attention_mask,
         max_length=100,  # Increased for better descriptions
         do_sample=True,
         temperature=0.7,
         top_p=0.9,
-        pad_token_id=tokenizer.eos_token_id
+        pad_token_id=tokenizer.pad_token_id
     )
 
     generated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
