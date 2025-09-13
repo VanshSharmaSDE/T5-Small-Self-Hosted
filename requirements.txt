@@ -1,6 +1,7 @@
-fastapi
-uvicorn
-gunicorn
+flask
 transformers
 torch
+gunicorn
+requests
 sentencepiece
+
