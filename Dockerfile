@@ -13,7 +13,6 @@ RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
 COPY app /app/app
-COPY download_model.py /app/download_model.py
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 
