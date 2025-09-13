@@ -5,7 +5,8 @@ import torch
 import os
 
 # Local model path (placed at project root: ./tiny-gpt2)
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "tiny-gpt2")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(BASE_DIR, "tiny-gpt2")
 
 # Model loading status
 model_loaded = False
@@ -15,8 +16,8 @@ model = None
 
 # Load tokenizer & model from local directory with error handling
 try:
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH)
-    model = AutoModelForCausalLM.from_pretrained(MODEL_PATH)
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_PATH, local_files_only=True)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_PATH, local_files_only=True)
     model_loaded = True
     print("Model and tokenizer loaded successfully!")
 except Exception as e:
